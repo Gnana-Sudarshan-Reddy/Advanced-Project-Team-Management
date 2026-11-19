@@ -1,0 +1,1 @@
+"""Placeholder kept for backwards compatibility; no separate Note model in Phase 2."""
