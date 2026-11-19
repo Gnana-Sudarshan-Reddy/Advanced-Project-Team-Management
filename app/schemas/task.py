@@ -22,6 +22,7 @@ class TaskCreate(BaseModel):
     estimated_hours: float | None = Field(default=None, ge=0)
     is_recurring: bool = False
     recurrence_pattern: str | None = Field(default=None, pattern="^(daily|weekly|monthly)$")
+    recurrence_next_date: date | None = None
     assignee_id: int | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
@@ -40,6 +41,7 @@ class TaskUpdate(BaseModel):
     estimated_hours: float | None = Field(default=None, ge=0)
     is_recurring: bool | None = None
     recurrence_pattern: str | None = Field(default=None, pattern="^(daily|weekly|monthly)$")
+    recurrence_next_date: date | None = None
     assignee_id: int | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
@@ -60,6 +62,7 @@ class TaskOut(BaseModel):
     estimated_hours: float | None
     is_recurring: bool
     recurrence_pattern: str | None
+    recurrence_next_date: date | None
     project_id: int
     parent_task_id: int | None
     milestone_id: int | None
@@ -106,4 +109,17 @@ class ActivityOut(BaseModel):
     project_id: int | None
     task_id: int | None
     details: dict | None
+    created_at: datetime
+
+
+class TaskHistoryOut(BaseModel):
+    """Field-level task change history returned by the API."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    task_id: int
+    action: str
+    changes: dict | None
+    summary: str | None
+    changed_by: UserBrief | None
     created_at: datetime

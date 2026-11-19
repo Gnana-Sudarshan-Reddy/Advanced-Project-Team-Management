@@ -27,6 +27,14 @@ from app.services.utils import apply_changes, plain
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
+ALLOWED_PROJECT_TRANSITIONS = {
+    ProjectStatus.PLANNING.value: {ProjectStatus.ACTIVE.value, ProjectStatus.ARCHIVED.value},
+    ProjectStatus.ACTIVE.value: {ProjectStatus.ON_HOLD.value, ProjectStatus.COMPLETED.value, ProjectStatus.ARCHIVED.value},
+    ProjectStatus.ON_HOLD.value: {ProjectStatus.ACTIVE.value, ProjectStatus.ARCHIVED.value},
+    ProjectStatus.COMPLETED.value: {ProjectStatus.ARCHIVED.value},
+    ProjectStatus.ARCHIVED.value: set(),
+}
+
 
 def _detail(project: Project) -> ProjectDetail:
     """Convert a project ORM object to its detailed API response schema."""
@@ -96,6 +104,9 @@ def update_project(project_id: int, payload: ProjectUpdate, db: Session = Depend
         ensure_project_owner(project, user)
     if "status" in data:
         data["status"] = plain(data["status"])
+        if data["status"] != project.status and data["status"] not in ALLOWED_PROJECT_TRANSITIONS.get(project.status, set()):
+            raise ConflictError(f"Project cannot transition from {project.status} to {data['status']}",
+                                409, "invalid_status_transition")
     changes = apply_changes(project, data)
     if changes:
         log_activity(db, user, "project.updated", project_id=project.id, details=changes)

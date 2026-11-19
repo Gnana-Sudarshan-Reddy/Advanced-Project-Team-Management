@@ -11,6 +11,7 @@ from app.models.project_approval import ProjectApproval
 from app.models.resource_allocation import ResourceAllocation
 from app.models.project_document import ProjectDocument
 from app.models.task import Task
+from app.models.task_history import TaskHistory
 from app.models.task_attachment import TaskAttachment
 from app.models.task_checklist import TaskChecklist
 from app.models.task_dependency import TaskDependency
@@ -25,5 +26,5 @@ __all__ = [
     "ProjectMilestone", "TaskDependency", "TaskAttachment", "TaskWatcher", "TaskChecklist",
     "TimeEntry", "Timesheet", "ProjectDiscussion", "DiscussionReply", "CommentReaction",
     "ProjectApproval", "Notification", "NotificationPreference", "CalendarEvent", "ResourceAllocation",
-    "ProjectDocument",
+    "ProjectDocument", "TaskHistory",
 ]

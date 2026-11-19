@@ -27,3 +27,6 @@
 2026-11-17 11:59:00,773 INFO [app] Project & Team Management API started (development)
 2026-11-17 11:59:06,273 INFO [app] [99a482ca] GET /redoc -> 200 (0.4ms)
 2026-11-17 11:59:07,311 INFO [app] [845b8c9c] GET /openapi.json -> 200 (880.8ms)
+2026-11-19 14:04:53,301 INFO [app] Project & Team Management API started (development)
+2026-11-19 14:04:59,549 INFO [app] [f32d23a8] GET /redoc -> 200 (0.9ms)
+2026-11-19 14:05:00,451 INFO [app] [69139791] GET /openapi.json -> 200 (721.4ms)

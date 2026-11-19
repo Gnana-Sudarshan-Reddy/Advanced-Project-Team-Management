@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     SENTRY_DSN: str | None = None  # optional error monitoring
     CORS_ORIGINS: list[str] = ["*"]
     UPLOAD_DIR: str = "uploads"
+    MAX_UPLOAD_BYTES: int = 10 * 1024 * 1024
+    ALLOWED_UPLOAD_TYPES: list[str] = [
+        "application/pdf", "image/png", "image/jpeg", "text/plain",
+        "application/zip", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ]
     DEADLINE_NOTIFICATION_DAYS: int = 2
 
 

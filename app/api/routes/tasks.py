@@ -7,19 +7,20 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_permission
-from app.core.exceptions import AppError, ForbiddenError
+from app.core.exceptions import AppError, ConflictError, ForbiddenError
 from app.core.permissions import Perm
 from app.db.session import get_db
-from app.models import ActivityLog, Project, Task, TaskComment, User
+from app.models import ActivityLog, Project, Task, TaskComment, TaskDependency, User
 from app.models.enums import TaskPriority, TaskStatus
 from app.models.mixins import utcnow
 from app.schemas.common import Page, PaginationParams, make_page
-from app.schemas.task import ActivityOut, CommentCreate, CommentOut, TaskCreate, TaskOut, TaskUpdate
+from app.schemas.task import ActivityOut, CommentCreate, CommentOut, TaskCreate, TaskHistoryOut, TaskOut, TaskUpdate
 from app.services.access import (
     accessible_project_ids, ensure_project_access, get_task_or_404, get_user_or_404, has_permission, is_admin,
 )
 from app.services.activity import log_activity
 from app.services.notification import create_notification, notify_mentions
+from app.services.task_history import record_task_history
 from app.services.utils import apply_changes, plain
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
@@ -116,10 +117,13 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db),
     data["status"] = plain(data["status"])
     data["priority"] = plain(data["priority"])
     task = Task(**data, created_by_id=user.id, updated_by_id=user.id)
+    if task.is_recurring and task.recurrence_next_date is None:
+        task.recurrence_next_date = task.due_date
     db.add(task)
     db.flush()
     log_activity(db, user, "task.created", project_id=project.id, task_id=task.id,
                  details={"title": task.title})
+    record_task_history(db, task.id, user, "created", {"title": task.title}, "Task created")
     if task.assignee_id and task.assignee_id != user.id:
         create_notification(db, task.assignee_id, "Task assigned", f"You were assigned task '{task.title}'.",
                             "task_assigned", related_entity_type="task", related_entity_id=task.id, actor=user)
@@ -185,14 +189,31 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
         data["status"] = plain(data["status"])
     if "priority" in data:
         data["priority"] = plain(data["priority"])
+    if data.get("status") == TaskStatus.DONE.value and task.status != TaskStatus.DONE.value:
+        blocked_by = db.query(Task).join(
+            TaskDependency, TaskDependency.depends_on_task_id == Task.id
+        ).filter(
+            TaskDependency.task_id == task.id,
+            Task.status != TaskStatus.DONE.value,
+        ).all()
+        if blocked_by:
+            raise ConflictError("Task cannot be completed until all dependencies are done", 409,
+                                "dependencies_incomplete")
     old_assignee = task.assignee_id
     changes = apply_changes(task, data)
+    if task.is_recurring and task.recurrence_next_date is None:
+        task.recurrence_next_date = task.due_date
     task.updated_by_id = user.id
     if changes:
         log_activity(db, user, "task.updated", project_id=project.id, task_id=task.id, details=changes)
+        record_task_history(db, task.id, user, "updated", changes, "Task updated")
         if "assignee_id" in changes and task.assignee_id and task.assignee_id != user.id:
             create_notification(db, task.assignee_id, "Task reassigned", f"Task '{task.title}' was assigned to you.",
                                 "task_reassigned", related_entity_type="task", related_entity_id=task.id, actor=user)
+        for watcher in task.watchers:
+            if watcher.user_id != user.id and watcher.user_id != task.assignee_id:
+                create_notification(db, watcher.user_id, "Task updated", f"Task '{task.title}' was updated.",
+                                    "task_updated", related_entity_type="task", related_entity_id=task.id, actor=user)
     db.commit()
     db.refresh(task)
     return task
@@ -226,6 +247,10 @@ def create_comment(task_id: int, payload: CommentCreate, db: Session = Depends(g
     if task.assignee_id and task.assignee_id != user.id:
         create_notification(db, task.assignee_id, "New task comment", f"{user.full_name} commented on '{task.title}'.",
                             "comment_added", related_entity_type="task", related_entity_id=task.id, actor=user)
+    for watcher in task.watchers:
+        if watcher.user_id != user.id and watcher.user_id != task.assignee_id:
+            create_notification(db, watcher.user_id, "New task comment", f"{user.full_name} commented on '{task.title}'.",
+                                "comment_added", related_entity_type="task", related_entity_id=task.id, actor=user)
     notify_mentions(db, payload.content, user, entity_type="task_comment", entity_id=comment.id,
                     project_id=project.id)
     db.commit()
@@ -237,6 +262,13 @@ def create_comment(task_id: int, payload: CommentCreate, db: Session = Depends(g
 def list_comments(task_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     task, _ = _load_accessible_task(db, user, task_id)
     return db.query(TaskComment).filter(TaskComment.task_id == task.id).order_by(TaskComment.created_at.asc()).all()
+
+
+@router.get("/{task_id}/history", response_model=list[TaskHistoryOut])
+def task_history(task_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Return immutable field-level changes for an accessible task."""
+    task, _ = _load_accessible_task(db, user, task_id)
+    return task.history
 
 
 @router.get("/me", response_model=Page[TaskOut])

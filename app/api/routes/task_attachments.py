@@ -1,8 +1,10 @@
 """Endpoints for task attachments (file metadata records)."""
 
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_permission
@@ -23,13 +25,18 @@ def upload_attachment(task_id: int, file: UploadFile = File(...), db: Session = 
                       user: User = Depends(require_permission(Perm.TASKS_MANAGE_ATTACHMENTS))):
     """Upload a file and attach it to a task."""
     task, project = _load_accessible_task(db, user, task_id)
+    if file.content_type not in settings.ALLOWED_UPLOAD_TYPES:
+        raise AppError("Unsupported file type", 415, "unsupported_file_type")
+    contents = file.file.read(settings.MAX_UPLOAD_BYTES + 1)
+    if len(contents) > settings.MAX_UPLOAD_BYTES:
+        raise AppError("File exceeds the maximum upload size", 413, "file_too_large")
     upload_dir = Path(settings.UPLOAD_DIR) / "tasks" / str(task.id)
     upload_dir.mkdir(parents=True, exist_ok=True)
     safe_name = Path(file.filename or "upload.bin").name
-    target = upload_dir / safe_name
-    target.write_bytes(file.file.read())
+    target = upload_dir / f"{uuid4().hex}_{safe_name}"
+    target.write_bytes(contents)
     attachment = TaskAttachment(task_id=task.id, uploaded_by_id=user.id, filename=safe_name,
-                                file_path=str(target), file_size=target.stat().st_size,
+                                file_path=str(target), file_size=len(contents),
                                 content_type=file.content_type)
     db.add(attachment)
     db.flush()
@@ -65,6 +72,22 @@ def list_attachments(task_id: int, db: Session = Depends(get_db),
     """List attachments of a task."""
     task, _ = _load_accessible_task(db, user, task_id)
     return task.attachments
+
+
+@router.get("/download/{attachment_id}")
+def download_attachment(attachment_id: int, db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    """Download an attachment after checking project access and storage boundaries."""
+    attachment = db.get(TaskAttachment, attachment_id)
+    if not attachment:
+        raise NotFoundError("Attachment not found")
+    _load_accessible_task(db, user, attachment.task_id)
+    upload_root = Path(settings.UPLOAD_DIR).resolve()
+    file_path = Path(attachment.file_path).resolve()
+    if upload_root not in file_path.parents or not file_path.is_file():
+        raise NotFoundError("Attachment file is unavailable")
+    return FileResponse(file_path, media_type=attachment.content_type or "application/octet-stream",
+                        filename=attachment.filename)
 
 
 @router.delete("/{attachment_id}", status_code=204)

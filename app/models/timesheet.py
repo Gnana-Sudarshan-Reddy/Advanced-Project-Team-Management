@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -27,5 +27,5 @@ class Timesheet(Base, TimestampMixin):
     user = relationship("User", foreign_keys=[user_id], lazy="joined")
     approved_by = relationship("User", foreign_keys=[approved_by_id], lazy="joined")
     __table_args__ = (
-        # UniqueConstraint("user_id", "week_start_date", name="uq_timesheet_user_week"),
+        UniqueConstraint("user_id", "week_start_date", name="uq_timesheet_user_week"),
     )

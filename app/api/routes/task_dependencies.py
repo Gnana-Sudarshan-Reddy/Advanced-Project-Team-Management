@@ -24,6 +24,25 @@ def _has_dependency(db: Session, task_id: int, depends_on_task_id: int) -> bool:
     ) is not None
 
 
+def _would_create_cycle(db: Session, task_id: int, prerequisite_id: int) -> bool:
+    """Return true when adding task -> prerequisite would create a cycle."""
+    graph: dict[int, set[int]] = {}
+    for source, target in db.query(TaskDependency.task_id, TaskDependency.depends_on_task_id).all():
+        graph.setdefault(source, set()).add(target)
+    graph.setdefault(task_id, set()).add(prerequisite_id)
+    stack = [prerequisite_id]
+    visited: set[int] = set()
+    while stack:
+        current = stack.pop()
+        if current == task_id:
+            return True
+        if current in visited:
+            continue
+        visited.add(current)
+        stack.extend(graph.get(current, ()))
+    return False
+
+
 @router.post("", response_model=TaskDependencyOut, status_code=201)
 def add_dependency(payload: TaskDependencyCreate, db: Session = Depends(get_db),
                    user: User = Depends(require_permission(Perm.TASKS_MANAGE_DEPENDENCIES))):
@@ -37,6 +56,8 @@ def add_dependency(payload: TaskDependencyCreate, db: Session = Depends(get_db),
         raise AppError("Dependent tasks must belong to the same project", 422, "cross_project")
     if _has_dependency(db, payload.task_id, payload.depends_on_task_id):
         raise ConflictError("Dependency already exists", 409, "duplicate_dependency")
+    if _would_create_cycle(db, payload.task_id, payload.depends_on_task_id):
+        raise ConflictError("Dependency would create a circular dependency", 409, "circular_dependency")
     dependency = TaskDependency(task_id=payload.task_id, depends_on_task_id=payload.depends_on_task_id)
     db.add(dependency)
     db.flush()

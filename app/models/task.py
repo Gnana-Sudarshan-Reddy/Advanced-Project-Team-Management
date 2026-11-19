@@ -27,6 +27,7 @@ class Task(Base, TimestampMixin):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_recurring: Mapped[bool] = mapped_column(default=False)
     recurrence_pattern: Mapped[str | None] = mapped_column(String(20))  # daily, weekly, monthly
+    recurrence_next_date: Mapped[date | None] = mapped_column(Date, index=True)
 
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
@@ -53,3 +54,5 @@ class Task(Base, TimestampMixin):
     # dependencies where THIS task is the prerequisite (others depend on this)
     dependencies_as_prerequisite = relationship("TaskDependency", foreign_keys="TaskDependency.depends_on_task_id",
                                                 back_populates="depends_on_task", cascade="all, delete-orphan", passive_deletes=True)
+    history = relationship("TaskHistory", back_populates="task", cascade="all, delete-orphan", passive_deletes=True,
+                           order_by="TaskHistory.created_at.desc()")

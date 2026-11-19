@@ -17,6 +17,7 @@ from app.db.base import Base
 from app.db.init_db import init_db
 from app.db.session import SessionLocal, engine
 from app.services.notification import notify_upcoming_deadlines
+from app.services.recurring_tasks import materialize_due_recurring_tasks
 
 setup_logging()
 logger = logging.getLogger("app")
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI):
         while True:
             with SessionLocal() as db:
                 notify_upcoming_deadlines(db, settings.DEADLINE_NOTIFICATION_DAYS)
+                materialize_due_recurring_tasks(db)
             await asyncio.sleep(3600)
     worker = asyncio.create_task(deadline_worker())
     logger.info("%s started (%s)", settings.APP_NAME, settings.ENVIRONMENT)
